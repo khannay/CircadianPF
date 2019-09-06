@@ -179,20 +179,15 @@ function getCovarianceParameters(;filename="./mcmc_run_params.dat", inflatedFact
     return covM
 end
 
-
-
-
-
-
 function runHCHS_PF(filename)
     SinglePopModel.setParameters()
     L, hchsDataFrame=HCHSLight.readData(filename)
-    ParticleFilterSP.initModel(L)
+    initModel(L)
     #@time ParticleFilterSP.systemDynamics([0.7,0.0], SinglePopModel.pvalues, [0.01,10.0], 0.0,24.0)
 
 
-    trueStates, dataObs=ParticleFilterSP.makeFakeData(SinglePopModel.pvalues,[0.01,10.0], 10.0)
-    xpf, wloglik=ParticleFilterSP.runParticleFilter(SinglePopModel.pvalues, dataObs, [0.01, 10.0], 10.0)
+    trueStates, dataObs=makeFakeData(SinglePopModel.pvalues,[0.01,10.0], 10.0)
+    xpf, wloglik=runParticleFilter(SinglePopModel.pvalues, dataObs, [0.01, 10.0], 10.0)
     p=plot(xpf[:,:,2], label="")
     scatter!(p,unwrap(trueStates), label="true states", color=:red)
     scatter!(p,)
@@ -204,10 +199,10 @@ end
 function PMCMC_HCHS(filename)
     SinglePopModel.setParameters()
     L, hchsDataFrame=HCHSLight.readData(filename)
-    ParticleFilterSP.initModel(L)
+    initModel(L)
 
-    trueStates, dataObs=ParticleFilterSP.makeFakeData(SinglePopModel.pvalues,[0.01,10.0], 10.0)
-    θ=ParticleFilterSP.pMMH(dataObs, 100, [0.01,10.0], 10.0)
+    trueStates, dataObs=makeFakeData(SinglePopModel.pvalues,[0.01,10.0], 10.0)
+    θ=pMMH(dataObs, 100, [0.01,10.0], 10.0)
     return(θ)
 end
 
