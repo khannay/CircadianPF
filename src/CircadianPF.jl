@@ -5,6 +5,7 @@ using CSV, DataFrames, LinearAlgebra, SharedArrays, Plots
 include("./SinglePopModel.jl")
 include("./HCHSLight.jl")
 include("./LightSchedules.jl")
+include("./util.jl")
 
 greet() = print("Hello World!")
 
@@ -12,7 +13,7 @@ function initModel(LightIn)
     SinglePopModel.setB(LightIn)
 end
 
-function makeFakeData(params, σp, σy; num_data=40)
+function makeFakeData(params::sp_parameters, σp, σy; num_data=40)
     #=
         Generate some fake data using the specified LightSchedule
     =#
@@ -29,10 +30,12 @@ function makeFakeData(params, σp, σy; num_data=40)
     end
     #Add the measurement noise
     PsiMeasured=Psi .+ rand(VonMises(0.0, 1.0/σy), length(Psi))
+    Psi=convert(Array{Float64}, Psi)
+    PsiMeasured=convert(Array{Float64}, PsiMeasured)
     return(Psi, PsiMeasured)
 end
 
-function systemDynamics(ustart, params, σp, tstart, tend)
+function systemDynamics(ustart, params::sp_parameters, σp, tstart, tend)
     #=
     This function implements the sp model predictions with intrinsic noise
     in the dynamics. You need to give the time start and tend because the
@@ -46,7 +49,7 @@ function systemDynamics(ustart, params, σp, tstart, tend)
     state=sol[end] .+ processNoise #add the process noise to the system
 end
 
-function runParticleFilter(params, dataObs, σp, σy; N=1000, init=[0.70, 0.0])
+function runParticleFilter(params::sp_parameters, dataObs, σp, σy; N=1000, init=[0.70, 0.0])
     #=
         Implement a basic bootstrap particle filter
     =#
@@ -99,11 +102,16 @@ function runParticleFilter(params, dataObs, σp, σy; N=1000, init=[0.70, 0.0])
     return xpf, wloglik
 end
 
-function pMMH_likelihood(paramsProposal, dataObs, σp, σy; Nin=1000)
+
+
+
+function pMMH_likelihood(paramsProposal::sp_parameters, dataObs, σp, σy; Nin=1000)
     xpf, wloglik=runParticleFilter(paramsProposal, dataObs, σp, σy, N=Nin)
     #s=sample(1:N, Weights(exp.(wloglik))) #pick a trajectory
     return wloglik
 end
+
+
 
 function pMMH(dataObs, M, σp, σy)
     #=
@@ -147,13 +155,16 @@ function pMMH(dataObs, M, σp, σy)
     return(θ)
 end
 
-function getCovarianceParameters(;filename="./mcmc_run_params.dat", inflatedFactor=1.0)
+
+
+
+function getCovarianceParameters(;filename="./data/mcmc_run_params.dat", inflatedFactor=1.0)
     #=
     Use the PRC fitting MCMC to form a prior for the parameters
     =#
     covM=diagm(0=>ones(9))
     println(size(covM))
-    mcmcData=CSV.File("mcmc_run_params.dat", delim="\t") |> DataFrame
+    mcmcData=CSV.File("./data/mcmc_run_params.dat", delim="\t") |> DataFrame
     mcmcData[:,1]= 2π ./ mcmcData[:,1] #convert period to frequency
     mcmcData=mcmcData[1:7] #take the first 7 columns only
     mcmcData[8]=0.024*ones(length(mcmcData[1])) #add fixed γ column
@@ -180,7 +191,8 @@ function getCovarianceParameters(;filename="./mcmc_run_params.dat", inflatedFact
 end
 
 function runHCHS_PF(filename)
-    SinglePopModel.setParameters()
+    my_parms=sp_parameters()
+    SinglePopModel.setParameters(my_parms)
     L, hchsDataFrame=HCHSLight.readData(filename)
     initModel(L)
     #@time ParticleFilterSP.systemDynamics([0.7,0.0], SinglePopModel.pvalues, [0.01,10.0], 0.0,24.0)
@@ -188,16 +200,19 @@ function runHCHS_PF(filename)
 
     trueStates, dataObs=makeFakeData(SinglePopModel.pvalues,[0.01,10.0], 10.0)
     xpf, wloglik=runParticleFilter(SinglePopModel.pvalues, dataObs, [0.01, 10.0], 10.0)
+
     p=plot(xpf[:,:,2], label="")
-    scatter!(p,unwrap(trueStates), label="true states", color=:red)
+    scatter!(p,util.unwrap(trueStates), label="true states", color=:red)
     scatter!(p,)
     display(p)
+
     return trueStates,xpf
 
 end
 
 function PMCMC_HCHS(filename)
-    SinglePopModel.setParameters()
+    my_parms=sp_parameters()
+    SinglePopModel.setParameters(my_parms)
     L, hchsDataFrame=HCHSLight.readData(filename)
     initModel(L)
 

@@ -7,18 +7,33 @@ CBT=DLMO_mid+2hrs
 CBT=circadian phase pi in the model
 DLMO=circadian phase 5pi/12=1.309 in the model
 =#
-
 module SinglePopModel
 
+using Parameters
 using DifferentialEquations
 using ParameterizedFunctions
 using DataFrames
 using ODEInterfaceDiffEq
 using Sundials
-include("./processedLight.jl")
+include("processedLight.jl")
 #solver_method=RadauIIA5() #safe but slow option for integrating the odes
 #solver_method=ARKODE(Sundials.Explicit(),etable = Sundials.CASH_KARP_6_4_5)
 solver_method=CVODE_BDF()
+
+@with_kw struct sp_parameters
+	ω0::Float64=0.263524;
+	K::Float64=0.0635842;
+	γ::Float64=0.024;
+	β1::Float64=-0.0931817;
+	A1::Float64=0.3855;
+	A2::Float64=0.195123;
+	βL1::Float64=-0.0026;
+	βL2::Float64=-0.957756;
+	σ::Float64=0.0400692;
+end
+
+export sp_parameters
+
 
 spmodel = @ode_def_bare begin
     dR=-1.0*γ*R+K*cos(β1)/2.0*R*(1.0-R^4)+B(t)*(A1*0.5*(1.0-R^4)*cos(Ψ+βL1)+A2*0.5*R*(1.0-R^8)*cos(2.0*Ψ+βL2))
@@ -26,24 +41,16 @@ spmodel = @ode_def_bare begin
 end ω0 K γ β1 A1 A2 βL1 βL2 σ
 
 
-function setParameters(;paramsIn=nothing)
+
+
+function setParameters(p::sp_parameters)
 #=
 Set the parameters for the system
-Using the order as given in the spmodel parameterixed function above
+pass in a sp_parameters object
 
 =#
-	if paramsIn==nothing
-    	pfilename="optimalParams.dat"
-    	global pvalues=[]
-    	open(pfilename) do filep
-        	s=read(filep, String)
-        	push!(pvalues, map(x->parse(Float64,x),split(s)))
-    	end
-    	pvalues=pvalues[1]
-    	pvalues=pvalues[1:9] #non light parameters only
-	else
-		global pvalues=paramsIn
-	end
+    @unpack ω0,K,γ, β1, A1, A2, βL1, βL2, σ=p
+    global pvalues=[ω0,K,γ, β1, A1, A2, βL1, βL2, σ]  #non light parameters only
 end #setParameters
 
 function setB(LightIn)
