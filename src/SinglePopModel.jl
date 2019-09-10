@@ -7,7 +7,7 @@ CBT=DLMO_mid+2hrs
 CBT=circadian phase pi in the model
 DLMO=circadian phase 5pi/12=1.309 in the model
 =#
-module SinglePopModel
+gemodule SinglePopModel
 
 using Parameters
 using DifferentialEquations
