@@ -5,7 +5,8 @@
 
 module actogram
 
-    using Plots
+using Plots, Dierckx
+
 
     function rectangle(w,x,y)
         Shape(x .+ [0,w,w,0], y .+ [0,0,1,1])
@@ -27,7 +28,7 @@ module actogram
         println("Number of days is: $num_days")
 
         #Add the light schedule to the plot
-        p=plot(0:48, 0:48, label="", yflip=true) #set up a plot with the right axes
+        p=plot(0:48, 0:48, label="", yflip=true, xtickfontsize=4, ytickfontsize=4, xguidefontsize=6, yguidefontsize=6, titlefontsize=8) #set up a plot with the right axes
         ylims!(p,0,num_days)
         xlims!(p,0,48)
         yticks!(p, 0:num_days)
@@ -94,16 +95,53 @@ module actogram
             end
         end
 
+        dayYvalsDLMO, dlmo_times=getPhaseMarker(tsdf.Time, tsdf.Phase, num_days, marker=1.309)
+        dayYvalsCBT, cbt_times=getPhaseMarker(tsdf.Time, tsdf.Phase, num_days, marker=π)
+
+        scatter!(dlmo_times, dayYvalsDLMO, seriestype=:scatter, label="", color=:blue)
+        scatter!(dlmo_times .+ 24.0, dayYvalsDLMO, seriestype=:scatter, label="", color=:blue)
+
+        scatter!(cbt_times, dayYvalsCBT, seriestype=:scatter, label="", color=:red, markershape=:cross)
+        scatter!(cbt_times .+ 24.0, dayYvalsCBT, seriestype=:scatter, label="", color=:red, markershape=:cross)
 
         display(p)
-        #Now add the circadian predictions
-
-
-
-
-
+        return p
     end
 
+    function getPhaseMarker(Time, Phase, num_days; marker=1.309)
+        dlmo_func=Spline1D(Phase, Time)
 
+        real_days=Time[end]/24.0
+
+        if (Phase[1]<marker)
+            dlmo_phases=collect(marker:2*π:real_days*2*π)
+            dlmo_times=mod.(dlmo_func(dlmo_phases),24.0)
+            dayYvalsDLMO=num_days .- collect(0.5:1.0:length(dlmo_times)+0.5)
+        else
+            dlmo_phases=collect(marker+2*π:2*π:real_days*2*π)
+            dlmo_times=mod.(dlmo_func(dlmo_phases),24.0)
+            dayYvalsDLMO=num_days .- collect(1.5:1.0:length(dlmo_times)+1.5)
+        end
+
+        l1=length(dlmo_times)
+        l2=length(dayYvalsDLMO)
+
+        #println("The lengths are $l1 and $l2")
+
+        return dayYvalsDLMO, dlmo_times
+    end
 
 end
+
+include("SinglePopModel.jl")
+include("HCHSLight.jl")
+my_parms=SinglePopModel.sp_parameters()
+SinglePopModel.setParameters(my_parms)
+L, hchsDataFrame=HCHSLight.readData("./data/hchs-sol-sueno-00579338.csv")
+SinglePopModel.setB(L)
+last=SinglePopModel.integrateTransients(numdays=200)
+
+last[2]=mod(last[2], 2π)
+println("Starting is $last")
+tsdf=SinglePopModel.getTS(40*24.0, last)
+actogram.makeActogram(tsdf)

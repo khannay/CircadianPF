@@ -7,7 +7,7 @@ CBT=DLMO_mid+2hrs
 CBT=circadian phase pi in the model
 DLMO=circadian phase 5pi/12=1.309 in the model
 =#
-gemodule SinglePopModel
+module SinglePopModel
 
 using Parameters
 using DifferentialEquations
@@ -40,7 +40,13 @@ spmodel = @ode_def_bare begin
     dΨ=ω0+K/2.0*sin(β1)*(1+R^4)+B(t)*(σ-A1*0.5*(R^3+1.0/R)*sin(Ψ+βL1)-A2*0.5*(1.0+R^8)*sin(2.0*Ψ+βL2))
 end ω0 K γ β1 A1 A2 βL1 βL2 σ
 
-
+function spmodelRHS(du,u,p,t,B)
+	@unpack ω0,K,γ, β1, A1, A2, βL1, βL2, σ=p
+	R=u[1]
+	Ψ=u[2]
+	du[1]=-1.0*γ*R+K*cos(β1)/2.0*R*(1.0-R^4)+B(t)*(A1*0.5*(1.0-R^4)*cos(Ψ+βL1)+A2*0.5*R*(1.0-R^8)*cos(2.0*Ψ+βL2))
+    du[2]=ω0+K/2.0*sin(β1)*(1+R^4)+B(t)*(σ-A1*0.5*(R^3+1.0/R)*sin(Ψ+βL1)-A2*0.5*(1.0+R^8)*sin(2.0*Ψ+βL2))
+end
 
 
 function setParameters(p::sp_parameters)
@@ -67,6 +73,19 @@ end
 
 function integrateModel(tend, initial)
     prob=ODEProblem(spmodel,initial,(0.0,tend), pvalues)
+    sol=solve(prob, solver_method)
+    return sol
+end
+
+function integrateModel(tend, initial)
+    prob=ODEProblem(spmodel,initial,(0.0,tend), pvalues)
+    sol=solve(prob, solver_method)
+    return sol
+end
+
+function integrateModel2(tend, initial, B, p)
+	spmodelThis(du,u,p,t)=spmodelRHS(du,u,p,t,B)
+    prob=ODEProblem(spmodelThis,initial,(0.0,tend), p)
     sol=solve(prob, solver_method)
     return sol
 end

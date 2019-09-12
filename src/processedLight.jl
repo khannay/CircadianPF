@@ -15,7 +15,7 @@ lightTransformSystem=@ode_def_bare begin
   dn=60.0*(α0(t)*(1.0-n)-δ*n)
 end αconst p I0 δ
 
-function getBfunc(;repeatDays=100)
+function getBfunc(;repeatDays=500)
 	#=
 		Solves the nonlinear ode using the function L(t) to give the
 		transformed light B(t) which is actually presented to the SCN
