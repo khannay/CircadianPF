@@ -68,7 +68,7 @@ function integrateSegment(initial, tstart, tend, L, p)
     return sol
 end
 
-function integrateTransients(;numdays=50, L, p)
+function integrateTransients(L,p;numdays=50)
 	spmodelThis(du,u,p,t)=spmodelRHS(du,u,p,t,L)
     tend=numdays*24.0
     prob=ODEProblem(spmodelThis,[0.75,0.0],(0.0,tend), p)

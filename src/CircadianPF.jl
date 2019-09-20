@@ -2,28 +2,25 @@ module CircadianPF
 
 using Distributions, StatsBase, DifferentialEquations
 using CSV, DataFrames, LinearAlgebra, SharedArrays, Plots
-include("./SinglePopModel.jl")
+include("./HumanModel.jl")
 include("./HCHSLight.jl")
 include("./LightSchedules.jl")
 include("./util.jl")
 
 greet() = print("Hello World!")
 
-function initModel(LightIn)
-    SinglePopModel.setB(LightIn)
-end
 
-function makeFakeData(params::sp_parameters, σp, σy; num_data=40)
+function makeFakeData(params::HumanModel.sp_parameters, σp, σy, Light; num_data=40)
     #=
         Generate some fake data using the specified LightSchedule
     =#
-    SinglePopModel.setParameters(paramsIn=params)
-    currentVal=SinglePopModel.integrateTransients()
+
+    currentVal=HumanModel.integrateTransients(Light,params)
     Psi=[]
     push!(Psi, angle(exp(im*currentVal[2])))
     tcurrent=0.0
     while tcurrent < num_data*24.0
-        currentVal=systemDynamics(currentVal, params, σp, tcurrent, tcurrent+24.0)
+        currentVal=systemDynamics(currentVal, params, σp, tcurrent, tcurrent+24.0, Light)
         observedState=angle(exp(im*currentVal[2]))
         push!(Psi, observedState)
         tcurrent+=24.0
@@ -35,21 +32,20 @@ function makeFakeData(params::sp_parameters, σp, σy; num_data=40)
     return(Psi, PsiMeasured)
 end
 
-function systemDynamics(ustart, params::sp_parameters, σp, tstart, tend)
+function systemDynamics(ustart, params::HumanModel.sp_parameters, σp, tstart, tend, Light)
     #=
     This function implements the sp model predictions with intrinsic noise
     in the dynamics. You need to give the time start and tend because the
     system is not autonomous. Also σp has two elements for the noise in each
     component of the model (R, ψ)
     =#
-    SinglePopModel.setParameters(paramsIn=params)
-    sol=SinglePopModel.integrateSegment(ustart, tstart, tend)
+    sol=SinglePopModel.integrateSegment(ustart, tstart, tend, Light, params)
     vp=[Normal(0.0, σp[1]), VonMises(1.0/σp[2],1)]
     processNoise=[rand(vp[1],1)[1], rand(vp[2],1)[1]]
     state=sol[end] .+ processNoise #add the process noise to the system
 end
 
-function runParticleFilter(params::sp_parameters, dataObs, σp, σy; N=1000, init=[0.70, 0.0])
+function runParticleFilter(params::HumanModel.sp_parameters, dataObs, σp, σy, Light; N=1000, init=[0.70, 0.0])
     #=
         Implement a basic bootstrap particle filter
     =#
@@ -75,7 +71,7 @@ function runParticleFilter(params::sp_parameters, dataObs, σp, σy; N=1000, ini
 
         # Parallel Part is not working
         Threads.@threads for p in 1:N
-            xpf[t,p,:]= systemDynamics(xpf[t-1,p,:],params,σp,tstart,tend ) # 1. Importance sampling step, project each particle forward using the underlying dynamics
+            xpf[t,p,:]= systemDynamics(xpf[t-1,p,:],params,σp,tstart,tend, Light) # 1. Importance sampling step, project each particle forward using the underlying dynamics
             observedState=angle(exp(im*xpf[t,p,2])) #Find the state given by the simulation
             w_tilde[p]= pdf(VonMises(observedState,1.0/σy), dataObs[t-1]) # Simulation prob given the data observed at that point
         end
@@ -105,15 +101,15 @@ end
 
 
 
-function pMMH_likelihood(paramsProposal::sp_parameters, dataObs, σp, σy; Nin=1000)
-    xpf, wloglik=runParticleFilter(paramsProposal, dataObs, σp, σy, N=Nin)
+function pMMH_likelihood(paramsProposal::HumanModel.sp_parameters, dataObs, σp, σy, Light; Nin=1000)
+    xpf, wloglik=runParticleFilter(paramsProposal, dataObs, σp, σy, Light, N=Nin)
     #s=sample(1:N, Weights(exp.(wloglik))) #pick a trajectory
     return wloglik
 end
 
 
 
-function pMMH(dataObs, M, σp, σy)
+function pMMH(dataObs, M, σp, σy, Light)
     #=
         Implement of Particle filter metropolis hastings walk through the
         parameter space.
@@ -131,13 +127,13 @@ function pMMH(dataObs, M, σp, σy)
     proposalDist=MultivariateNormal(zeros(numParams), 0.5 .* priorCov)
     θlast=rand(priorDist)
 
-    likθlast=pMMH_likelihood(θlast, dataObs, σp, σy)
+    likθlast=pMMH_likelihood(θlast, dataObs, σp, σy, Light)
 
     θ=zeros(M,numParams)
 
     for i in 1:M
         θstar=rand(proposalDist)+θlast
-        likθstar=pMMH_likelihood(θlast, dataObs, σp, σy)
+        likθstar=pMMH_likelihood(θlast, dataObs, σp, σy, Light)
         logα=(likθstar-likθlast)+log(pdf(priorDist, θstar)/pdf(priorDist, θlast))
         if (logα>0.0)
             r=1.0
@@ -191,15 +187,13 @@ function getCovarianceParameters(;filename="./data/mcmc_run_params.dat", inflate
 end
 
 function runHCHS_PF(filename)
-    my_parms=sp_parameters()
-    SinglePopModel.setParameters(my_parms)
-    L, hchsDataFrame=HCHSLight.readData(filename)
-    initModel(L)
+    my_parms=HumanModel.sp_parameters()
+    Light, hchsDataFrame=HCHSLight.readData(filename)
     #@time ParticleFilterSP.systemDynamics([0.7,0.0], SinglePopModel.pvalues, [0.01,10.0], 0.0,24.0)
 
 
-    trueStates, dataObs=makeFakeData(SinglePopModel.pvalues,[0.01,10.0], 10.0)
-    xpf, wloglik=runParticleFilter(SinglePopModel.pvalues, dataObs, [0.01, 10.0], 10.0)
+    trueStates, dataObs=makeFakeData(my_parms,[0.01,10.0], 10.0, Light)
+    xpf, wloglik=runParticleFilter(my_parms, dataObs, [0.01, 10.0], 10.0, Light)
 
     p=plot(xpf[:,:,2], label="")
     scatter!(p,util.unwrap(trueStates), label="true states", color=:red)
@@ -212,12 +206,10 @@ end
 
 function PMCMC_HCHS(filename)
     my_parms=sp_parameters()
-    SinglePopModel.setParameters(my_parms)
-    L, hchsDataFrame=HCHSLight.readData(filename)
-    initModel(L)
+    Light, hchsDataFrame=HCHSLight.readData(filename)
 
-    trueStates, dataObs=makeFakeData(SinglePopModel.pvalues,[0.01,10.0], 10.0)
-    θ=pMMH(dataObs, 100, [0.01,10.0], 10.0)
+    trueStates, dataObs=makeFakeData(my_parms,[0.01,10.0], 10.0)
+    θ=pMMH(dataObs, 100, [0.01,10.0], 10.0, Light)
     return(θ)
 end
 
